@@ -144,7 +144,7 @@ func (s *testClusterInfoSuite) TestRegionAddPendingPeer3C(c *C) {
 
 func (s *testClusterInfoSuite) TestRegionRemovePendingPeer3C(c *C) {
 	cluster, regions := s.setUpTestCluster(c)
-
+	// log.Infof("setUpTestCluster, len(regions):%+v", len(regions))
 	for i, region := range regions {
 		region = region.Clone(core.WithPendingPeers([]*metapb.Peer{region.GetPeers()[rand.Intn(len(region.GetPeers()))]}))
 		regions[i] = region
@@ -1067,6 +1067,9 @@ func (s *testRegionsInfoSuite) Test(c *C) {
 }
 
 func checkRegion(c *C, a *core.RegionInfo, b *core.RegionInfo) {
+	// log.Infof("a, meta:%+v, voters:%+v, leader:%+v", a.GetMeta(), a.GetVoters(), a.GetLeader())
+	// log.Infof("b, meta:%+v, voters:%+v, leader:%+v", b.GetMeta(), b.GetVoters(), b.GetLeader())
+
 	c.Assert(a, DeepEquals, b)
 	c.Assert(a.GetMeta(), DeepEquals, b.GetMeta())
 	c.Assert(a.GetLeader(), DeepEquals, b.GetLeader())

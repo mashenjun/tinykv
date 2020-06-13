@@ -53,6 +53,10 @@ type SnapManager struct {
 	MaxTotalSize uint64
 }
 
+func (sm *SnapManager) Base() string {
+	return sm.base
+}
+
 func NewSnapManager(path string) *SnapManager {
 	return new(SnapManagerBuilder).Build(path)
 }
@@ -244,7 +248,7 @@ func (sm *SnapManager) Register(key SnapKey, entry SnapEntry) {
 	if ok {
 		for _, e := range entries {
 			if e == entry {
-				log.Warnf("%s is registered more than 1 time", key)
+				log.Warnf("%s is registered more than 1 time on %+v", key, entry)
 				return
 			}
 		}

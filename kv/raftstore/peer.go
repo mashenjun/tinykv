@@ -38,7 +38,7 @@ func createPeer(storeID uint64, cfg *config.Config, sched chan<- worker.Task,
 	if metaPeer == nil {
 		return nil, errors.Errorf("find no peer for store %d in region %v", storeID, region)
 	}
-	log.Infof("region %v create peer with ID %d", region, metaPeer.Id)
+	log.Infof("create peer with storeID %d",metaPeer.Id)
 	return NewPeer(storeID, cfg, engines, region, sched, metaPeer)
 }
 
@@ -132,7 +132,6 @@ func NewPeer(storeId uint64, cfg *config.Config, engines *engine_util.Engines, r
 		Applied:       appliedIndex,
 		Storage:       ps,
 	}
-
 	raftGroup, err := raft.NewRawNode(raftCfg)
 	if err != nil {
 		return nil, err
@@ -184,7 +183,7 @@ func (p *peer) nextProposalIndex() uint64 {
 	return p.RaftGroup.Raft.RaftLog.LastIndex() + 1
 }
 
-/// Tries to destroy itself. Returns a job (if needed) to do more cleaning tasks.
+// Tries to destroy itself. Returns a job (if needed) to do more cleaning tasks.
 func (p *peer) MaybeDestroy() bool {
 	if p.stopped {
 		log.Infof("%v is being destroyed, skip", p.Tag)
@@ -193,10 +192,10 @@ func (p *peer) MaybeDestroy() bool {
 	return true
 }
 
-/// Does the real destroy worker.Task which includes:
-/// 1. Set the region to tombstone;
-/// 2. Clear data;
-/// 3. Notify all pending requests.
+// Does the real destroy worker.Task which includes:
+// 1. Set the region to tombstone;
+// 2. Clear data;
+// 3. Notify all pending requests.
 func (p *peer) Destroy(engine *engine_util.Engines, keepData bool) error {
 	start := time.Now()
 	region := p.Region()
@@ -244,10 +243,10 @@ func (p *peer) Region() *metapb.Region {
 	return p.peerStorage.Region()
 }
 
-/// Set the region of a peer.
-///
-/// This will update the region of the peer, caller must ensure the region
-/// has been preserved in a durable device.
+// Set the region of a peer.
+//
+// This will update the region of the peer, caller must ensure the region
+// has been preserved in a durable device.
 func (p *peer) SetRegion(region *metapb.Region) {
 	p.peerStorage.SetRegion(region)
 }
@@ -273,7 +272,7 @@ func (p *peer) Send(trans Transport, msgs []eraftpb.Message) {
 	}
 }
 
-/// Collects all pending peers and update `peers_start_pending_time`.
+// Collects all pending peers and update `peers_start_pending_time`.
 func (p *peer) CollectPendingPeers() []*metapb.Peer {
 	pendingPeers := make([]*metapb.Peer, 0, len(p.Region().GetPeers()))
 	truncatedIdx := p.peerStorage.truncatedIndex()
@@ -301,8 +300,8 @@ func (p *peer) clearPeersStartPendingTime() {
 	}
 }
 
-/// Returns `true` if any new peer catches up with the leader in replicating logs.
-/// And updates `PeersStartPendingTime` if needed.
+// Returns `true` if any new peer catches up with the leader in replicating logs.
+// And updates `PeersStartPendingTime` if needed.
 func (p *peer) AnyNewPeerCatchUp(peerId uint64) bool {
 	if len(p.PeersStartPendingTime) == 0 {
 		return false
@@ -370,7 +369,10 @@ func (p *peer) sendRaftMessage(msg eraftpb.Message, trans Transport) error {
 	if toPeer == nil {
 		return fmt.Errorf("failed to lookup recipient peer %v in region %v", msg.To, p.regionId)
 	}
-	log.Debugf("%v, send raft msg %v from %v to %v", p.Tag, msg.MsgType, fromPeer, toPeer)
+	// todo modify debug
+	if !raft.IsResponseMsg(msg.GetMsgType()) {
+		log.Debugf("%v, send raft msg %v from %v to %v", p.Tag, msg.MsgType, fromPeer, toPeer)
+	}
 
 	sendMsg.FromPeer = &fromPeer
 	sendMsg.ToPeer = toPeer

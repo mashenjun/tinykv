@@ -3,10 +3,11 @@ package transaction
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/pingcap-incubator/tinykv/kv/transaction/mvcc"
 	"github.com/pingcap-incubator/tinykv/kv/util/engine_util"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/kvrpcpb"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestGetValue4B getting a value works in the simple case.
@@ -540,7 +541,6 @@ func TestCommitConflictRace4B(t *testing.T) {
 		{cf: engine_util.CfLock, key: []byte{3}, value: []byte{1, 3, 0, 0, 0, 0, 0, 0, 0, 90, 0, 0, 0, 0, 0, 0, 0, 0}},
 	})
 	resp := builder.runOneRequest(cmd).(*kvrpcpb.CommitResponse)
-
 	assert.NotNil(t, resp.Error.Retryable)
 	assert.Nil(t, resp.RegionError)
 	builder.assertLens(1, 1, 0)

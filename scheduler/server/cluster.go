@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/pingcap-incubator/tinykv/kv/raftstore/util"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/metapb"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/schedulerpb"
 	"github.com/pingcap-incubator/tinykv/scheduler/pkg/logutil"
@@ -33,6 +34,7 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	testlog "github.com/pingcap-incubator/tinykv/log"
 )
 
 var (
@@ -279,7 +281,64 @@ func (c *RaftCluster) handleStoreHeartbeat(stats *schedulerpb.StoreStats) error 
 // processRegionHeartbeat updates the region information.
 func (c *RaftCluster) processRegionHeartbeat(region *core.RegionInfo) error {
 	// Your Code Here (3C).
-
+	// check if region is stale
+	// testlog.Infof("processRegionHeartbeat: meta:%+v, ppeers:%+v",region.GetMeta(), region.GetPendingPeers())
+	regionID := region.GetMeta().GetId()
+	localRegion := c.GetRegion(regionID)
+	// 1. Check whether there is a region with the same Id in local storage. If there is and at least one of the heartbeats’ conf_ver and version are less than its, this heartbeat region is stale
+	// 2. If there isn’t, scan all regions that overlap with it. The heartbeats’ conf_ver and version should be greater or equal than all of them, or the region is stale.
+	if region.GetRegionEpoch() == nil {
+		return errors.New("epoch is stale")
+	}
+	if localRegion == nil {
+		startKey := region.GetStartKey()
+		endKey := region.GetEndKey()
+		localRegions := c.ScanRegions(startKey, endKey, 0)
+		for _, r := range localRegions{
+			testlog.Infof("IsEpochStale, region.GetRegionEpoch:%+v, r.GetRegionEpoch:%+v",region.GetRegionEpoch(), r.GetRegionEpoch())
+			if r.GetRegionEpoch() != nil && util.IsEpochStale(region.GetRegionEpoch(), r.GetRegionEpoch()) {
+				return errors.New("epoch is stale")
+			}
+		}
+	}else {
+		testlog.Infof("IsEpochStale, region.GetRegionEpoch:%+v, localRegion.GetRegionEpoch:%+v",region.GetRegionEpoch(), localRegion.GetRegionEpoch())
+		if util.IsEpochStale(region.GetRegionEpoch(), localRegion.GetRegionEpoch()){
+			return errors.New("epoch is stale")
+		}
+	}
+	// check if should skip
+	if localRegion != nil {
+		if region.GetRegionEpoch().GetConfVer() > localRegion.GetRegionEpoch().GetConfVer() {
+			goto APPLY
+		}
+		if region.GetRegionEpoch().GetVersion() > localRegion.GetRegionEpoch().GetVersion() {
+			goto APPLY
+		}
+		if len(region.GetPendingPeers()) > 0 {
+			goto APPLY
+		}
+		if region.GetLeader().GetId() != localRegion.GetLeader().GetId() {
+			goto APPLY
+		}
+		if region.GetApproximateSize() != localRegion.GetApproximateSize() {
+			goto APPLY
+		}
+		if len(region.GetPeers()) != len(localRegion.GetPeers()) {
+			goto APPLY
+		}
+		if len(region.GetPendingPeers()) != len(localRegion.GetPendingPeers()) {
+			goto APPLY
+		}
+		return nil
+	}
+	APPLY:
+	// should update
+	c.core.PutRegion(region)
+	for _, p := range region.GetPeers(){
+		storeID := p.GetStoreId()
+		// todo??? correct way or not???
+		c.updateStoreStatusLocked(storeID)
+	}
 	return nil
 }
 

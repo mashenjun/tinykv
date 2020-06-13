@@ -995,7 +995,6 @@ func TestRestoreIgnoreSnapshot2C(t *testing.T) {
 	storage.Append(previousEnts)
 	sm := newTestRaft(1, []uint64{1, 2}, 10, 1, storage)
 	sm.RaftLog.committed = 3
-
 	commit := uint64(1)
 	s := pb.Snapshot{
 		Metadata: &pb.SnapshotMetadata{

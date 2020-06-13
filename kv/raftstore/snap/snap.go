@@ -5,6 +5,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,6 +117,7 @@ func NewApplyOptions(db *badger.DB, region *metapb.Region) *ApplyOptions {
 type Snapshot interface {
 	io.Reader
 	io.Writer
+	io.Closer
 	Build(dbSnap *badger.Txn, region *metapb.Region, snapData *rspb.RaftSnapshotData, stat *SnapStatistics, deleter SnapshotDeleter) error
 	Path() string
 	Exists() bool
@@ -359,6 +361,7 @@ func NewSnapForReceiving(dir string, key SnapKey, snapshotMeta *rspb.SnapshotMet
 		cfFile.File = f
 		cfFile.WriteDigest = crc32.NewIEEE()
 	}
+
 	return s, nil
 }
 
@@ -381,6 +384,8 @@ func (s *Snap) initForBuilding() error {
 		if err != nil {
 			return err
 		}
+		// todo able to close it
+		cfFile.File = file
 		cfFile.SstWriter = table.NewExternalTableBuilder(file, nil, badger.DefaultOptions.TableBuilderOptions)
 	}
 	return nil
@@ -395,6 +400,7 @@ func (s *Snap) readSnapshotMeta() (*rspb.SnapshotMeta, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	defer file.Close()
 	size := fi.Size()
 	buf := make([]byte, size)
 	_, err = io.ReadFull(file, buf)
@@ -423,6 +429,7 @@ func (s *Snap) setSnapshotMeta(snapshotMeta *rspb.SnapshotMeta) error {
 			// Check only the file size for `exists()` to work correctly.
 			err := checkFileSize(cfFile.Path, meta.GetSize_())
 			if err != nil {
+				log.Errorf("checkFileSize with %+v err:%+v", cfFile.Path, err)
 				return err
 			}
 		}
@@ -647,6 +654,9 @@ func (s *Snap) Save() error {
 		if err != nil {
 			return errors.WithStack(err)
 		}
+		if strings.HasSuffix(cfFile.Path, "rev_1_5_5_default.sst") {
+			log.Warnf("%s is created", cfFile.Path)
+		}
 		atomic.AddInt64(s.SizeTrack, int64(cfFile.Size))
 	}
 	// write meta file
@@ -687,7 +697,22 @@ func (s *Snap) Apply(opts ApplyOptions) error {
 			log.Errorf("open ingest file %s failed: %s", cfFile.Path, err)
 			return err
 		}
-		externalFiles = append(externalFiles, file)
+		input, err := ioutil.ReadFile(cfFile.Path)
+		if err != nil {
+			panic(err)
+		}
+
+		dir, name := filepath.Split(cfFile.Path)
+		err = ioutil.WriteFile(filepath.Join(dir, "bak-"+name), input, 0644)
+		if err != nil {
+			panic(err)
+		}
+		file.Close()
+		dest, err := os.Open(filepath.Join(dir, "bak-"+name))
+		if err != nil {
+			panic(err)
+		}
+		externalFiles = append(externalFiles, dest)
 	}
 	n, err := opts.DB.IngestExternalFiles(externalFiles)
 	for _, file := range externalFiles {
@@ -783,4 +808,25 @@ func (s *Snap) Drop() {
 	if !s.Exists() {
 		s.Delete()
 	}
+}
+
+func (s *Snap) Close() error {
+	for _, f := range s.CFFiles {
+		if f.File == nil {
+			continue
+		}
+		if err := f.File.Close(); err != nil {
+			// log.Warnf("close file path:%+v", f.File.Name())
+			panic(err)
+			return err
+		}
+	}
+	if s.MetaFile.File != nil {
+		if err := s.MetaFile.File.Close(); err != nil {
+			panic(err)
+			return err
+		}
+	}
+
+	return nil
 }

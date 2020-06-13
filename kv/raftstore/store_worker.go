@@ -94,9 +94,9 @@ func (d *storeWorker) start(store *metapb.Store) {
 	d.ticker.scheduleStore(StoreTickSnapGC)
 }
 
-/// Checks if the message is targeting a stale peer.
-///
-/// Returns true means the message can be dropped silently.
+// Checks if the message is targeting a stale peer.
+//
+// Returns true means the message can be dropped silently.
 func (d *storeWorker) checkMsg(msg *rspb.RaftMessage) (bool, error) {
 	regionID := msg.GetRegionId()
 	fromEpoch := msg.GetRegionEpoch()
@@ -136,7 +136,7 @@ func (d *storeWorker) checkMsg(msg *rspb.RaftMessage) (bool, error) {
 	regionEpoch := region.RegionEpoch
 	// The region in this peer is already destroyed
 	if util.IsEpochStale(fromEpoch, regionEpoch) {
-		log.Infof("tombstone peer receives a stale message. region_id:%d, from_region_epoch:%s, current_region_epoch:%s, msg_type:%s",
+		log.Debugf("tombstone peer receives a stale message. region_id:%d, from_region_epoch:%s, current_region_epoch:%s, msg_type:%s",
 			regionID, fromEpoch, regionEpoch, msgType)
 		notExist := util.FindPeer(region, fromStoreID) == nil
 		handleStaleMsg(d.ctx.trans, msg, regionEpoch, isVoteMsg && notExist)
@@ -188,10 +188,10 @@ func (d *storeWorker) onRaftMessage(msg *rspb.RaftMessage) error {
 	return nil
 }
 
-/// If target peer doesn't exist, create it.
-///
-/// return false to indicate that target peer is in invalid state or
-/// doesn't exist and can't be created.
+// If target peer doesn't exist, create it.
+//
+// return false to indicate that target peer is in invalid state or
+// doesn't exist and can't be created.
 func (d *storeWorker) maybeCreatePeer(regionID uint64, msg *rspb.RaftMessage) (bool, error) {
 	// we may encounter a message with larger peer id, which means
 	// current peer is stale, then we should remove current peer
@@ -303,6 +303,7 @@ func (d *storeWorker) scheduleGCSnap(regionID uint64, keys []snap.SnapKeyWithSen
 				return err
 			}
 			d.ctx.snapMgr.DeleteSnapshot(key, snapshot, false)
+			snapshot.Close()
 		}
 	}
 	return nil

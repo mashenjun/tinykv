@@ -1,11 +1,16 @@
 package util
 
 import (
+	"bytes"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
+	"os/exec"
 
 	"github.com/pingcap/errors"
+
+	"github.com/pingcap-incubator/tinykv/log"
 )
 
 func GetFileSize(path string) (uint64, error) {
@@ -54,4 +59,13 @@ func CalcCRC32(path string) (uint32, error) {
 		return 0, errors.WithStack(err)
 	}
 	return digest.Sum32(), nil
+}
+
+func CountOpenFiles() (int, error) {
+	out, err := exec.Command("/bin/sh", "-c", fmt.Sprintf("lsof -p %v", os.Getpid())).Output()
+	if err != nil {
+		return 0, err
+	}
+	log.Infof("lsof:%+v", string(out))
+	return bytes.Count(out, []byte("\n")) - 1, nil
 }

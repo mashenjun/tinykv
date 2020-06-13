@@ -51,3 +51,16 @@ func minDuration(a, b time.Duration) time.Duration {
 func isRegionUnhealthy(region *core.RegionInfo) bool {
 	return len(region.GetLearners()) != 0
 }
+
+type RegionSizeInfo struct {
+	StoreID    uint64
+	RegionSize int64
+}
+
+type RegionSizeInfoSlice []RegionSizeInfo
+
+func (slice RegionSizeInfoSlice) Len() int      { return len(slice) }
+func (slice RegionSizeInfoSlice) Swap(i, j int) { slice[i], slice[j] = slice[j], slice[i] }
+func (slice RegionSizeInfoSlice) Less(i, j int) bool {
+	return slice[i].RegionSize < slice[j].RegionSize
+}

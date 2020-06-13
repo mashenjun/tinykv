@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Connor1996/badger"
@@ -165,6 +166,8 @@ func (c *Cluster) StopServer(storeID uint64) {
 
 func (c *Cluster) StartServer(storeID uint64) {
 	engine := c.engines[storeID]
+	base := c.snapPaths[storeID]
+	c.cfg.DBPath = strings.TrimSuffix(base, "/snap")
 	err := c.simulator.RunStore(c.cfg, engine, context.TODO())
 	if err != nil {
 		panic(err)
@@ -195,9 +198,12 @@ func (c *Cluster) Request(key []byte, reqs []*raft_cmdpb.Request, timeout time.D
 			SleepMS(100)
 			continue
 		}
+		// if reqs[0].CmdType == raft_cmdpb.CmdType_Snap {
+		// 	log.Warnf("snap req:%+v with key:%+v, resp:%+v", req, string(key), resp)
+		// }
 		return resp, txn
 	}
-	panic("request timeout")
+	panic(fmt.Sprintf("request %+v timeout", reqs))
 }
 
 func (c *Cluster) CallCommand(request *raft_cmdpb.RaftCmdRequest, timeout time.Duration) (*raft_cmdpb.RaftCmdResponse, *badger.Txn) {
@@ -238,7 +244,7 @@ func (c *Cluster) CallCommandOnLeader(request *raft_cmdpb.RaftCmdRequest, timeou
 		if resp.Header.Error != nil {
 			err := resp.Header.Error
 			if err.GetStaleCommand() != nil || err.GetEpochNotMatch() != nil || err.GetNotLeader() != nil {
-				log.Debugf("encouter retryable err %+v", resp)
+				log.Debugf("encounter retryable err %+v with req:%+v", resp, request)
 				if err.GetNotLeader() != nil && err.GetNotLeader().Leader != nil {
 					leader = err.GetNotLeader().Leader
 				} else {
@@ -382,6 +388,7 @@ func (c *Cluster) Scan(start, end []byte) [][]byte {
 			values = append(values, value)
 		}
 		iter.Close()
+		// log.Warnf("Scan %s:%s region:%+v, len(value):%+v", string(start), string(end), region, len(values))
 
 		key = region.EndKey
 		if len(key) == 0 {
@@ -421,11 +428,13 @@ func (c *Cluster) MustTransferLeader(regionID uint64, leader *metapb.Peer) {
 }
 
 func (c *Cluster) MustAddPeer(regionID uint64, peer *metapb.Peer) {
+	log.Warnf("add regionID:%+v, %+v", regionID, peer)
 	c.schedulerClient.AddPeer(regionID, peer)
 	c.MustHavePeer(regionID, peer)
 }
 
 func (c *Cluster) MustRemovePeer(regionID uint64, peer *metapb.Peer) {
+	log.Warnf("remove regionID:%+v, %+v", regionID, peer)
 	c.schedulerClient.RemovePeer(regionID, peer)
 	c.MustNonePeer(regionID, peer)
 }

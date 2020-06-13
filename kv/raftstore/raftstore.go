@@ -39,10 +39,10 @@ type storeMeta struct {
 	sync.RWMutex
 	/// region end key -> region ID
 	regionRanges *btree.BTree
-	/// region_id -> region
+	// region_id -> region
 	regions map[uint64]*metapb.Region
-	/// `MsgRequestVote` messages from newly split Regions shouldn't be dropped if there is no
-	/// such Region in this store now. So the messages are recorded temporarily and will be handled later.
+	// `MsgRequestVote` messages from newly split Regions shouldn't be dropped if there is no
+	// such Region in this store now. So the messages are recorded temporarily and will be handled later.
 	pendingVotes []*rspb.RaftMessage
 }
 
@@ -104,8 +104,8 @@ type Transport interface {
 	Send(msg *rspb.RaftMessage) error
 }
 
-/// loadPeers loads peers in this store. It scans the db engine, loads all regions and their peers from it
-/// WARN: This store should not be used before initialized.
+// loadPeers loads peers in this store. It scans the db engine, loads all regions and their peers from it
+// WARN: This store should not be used before initialized.
 func (bs *Raftstore) loadPeers() ([]*peer, error) {
 	// Scan region meta to get saved regions.
 	startKey := meta.RegionMetaMinKey
@@ -120,6 +120,7 @@ func (bs *Raftstore) loadPeers() ([]*peer, error) {
 	t := time.Now()
 	kvWB := new(engine_util.WriteBatch)
 	raftWB := new(engine_util.WriteBatch)
+	log.Infof("store %+v loadPeers form kvPath:%+v", storeID, ctx.engine.KvPath)
 	err := kvEngine.View(func(txn *badger.Txn) error {
 		// get all regions from RegionLocalState
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
@@ -171,8 +172,8 @@ func (bs *Raftstore) loadPeers() ([]*peer, error) {
 	kvWB.MustWriteToDB(ctx.engine.Kv)
 	raftWB.MustWriteToDB(ctx.engine.Raft)
 
-	log.Infof("start store %d, region_count %d, tombstone_count %d, takes %v",
-		storeID, totalCount, tombStoneCount, time.Since(t))
+	log.Infof("start store %d, region_count %d, tombstone_count %d, len(regionPeer):%+v, takes %v",
+		storeID, totalCount, tombStoneCount, len(regionPeers), time.Since(t))
 	return regionPeers, nil
 }
 

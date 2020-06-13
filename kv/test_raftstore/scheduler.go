@@ -340,7 +340,6 @@ func (m *MockSchedulerClient) handleHeartbeatConfVersion(region *metapb.Region) 
 
 	regionPeerLen := len(region.GetPeers())
 	searchRegionPeerLen := len(searchRegion.GetPeers())
-
 	if region.RegionEpoch.ConfVer > searchRegion.RegionEpoch.ConfVer {
 		// If ConfVer changed, TinyKV has added/removed one peer already.
 		// So scheduler and TinyKV can't have same peer count and can only have
@@ -357,7 +356,8 @@ func (m *MockSchedulerClient) handleHeartbeatConfVersion(region *metapb.Region) 
 			}
 		} else if searchRegionPeerLen < regionPeerLen {
 			if regionPeerLen-searchRegionPeerLen != 1 {
-				panic("should only one conf change")
+				log.Errorf("regionPeer:%v, searchRegionPeer:%v", region.GetPeers(), searchRegion.GetPeers())
+				panic("should only one conf change ")
 			}
 			if len(GetDiffPeers(region, searchRegion)) != 1 {
 				panic("should only one different peer")
@@ -366,6 +366,7 @@ func (m *MockSchedulerClient) handleHeartbeatConfVersion(region *metapb.Region) 
 				panic("should include all peers")
 			}
 		} else {
+			log.Warnf("searchRegion:%+v, region:%+v", searchRegion, region)
 			MustSamePeers(searchRegion, region)
 			if searchRegion.RegionEpoch.ConfVer+1 != region.RegionEpoch.ConfVer {
 				panic("unmatched conf version")
@@ -463,11 +464,9 @@ func (m *MockSchedulerClient) findRegion(key []byte) *regionItem {
 		result = i.(*regionItem)
 		return false
 	})
-
 	if result == nil || !result.Contains(key) {
 		return nil
 	}
-
 	return result
 }
 
@@ -477,6 +476,7 @@ func (m *MockSchedulerClient) addRegionLocked(region *metapb.Region) {
 }
 
 func (m *MockSchedulerClient) removeRegionLocked(region *metapb.Region) {
+	// log.Warnf("removeRegionLocked: %+v", region)
 	delete(m.regionsKey, region.GetId())
 	result := m.findRegion(region.GetStartKey())
 	if result == nil || result.region.GetId() != region.GetId() {

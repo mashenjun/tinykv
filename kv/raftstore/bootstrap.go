@@ -6,6 +6,7 @@ import (
 	"github.com/Connor1996/badger"
 	"github.com/pingcap-incubator/tinykv/kv/raftstore/meta"
 	"github.com/pingcap-incubator/tinykv/kv/util/engine_util"
+	"github.com/pingcap-incubator/tinykv/log"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/metapb"
 	rspb "github.com/pingcap-incubator/tinykv/proto/pkg/raft_serverpb"
@@ -143,6 +144,7 @@ func ClearPrepareBootstrap(engines *engine_util.Engines, regionID uint64) error 
 	if err != nil {
 		return err
 	}
+	log.Warnf("DeleteMeta RegionStateKey %+v form:%+v", regionID, engines.KvPath)
 	return nil
 }
 

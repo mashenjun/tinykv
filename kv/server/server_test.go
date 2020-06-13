@@ -8,6 +8,7 @@ import (
 	"github.com/pingcap-incubator/tinykv/kv/storage"
 	"github.com/pingcap-incubator/tinykv/kv/storage/standalone_storage"
 	"github.com/pingcap-incubator/tinykv/kv/util/engine_util"
+	"github.com/pingcap-incubator/tinykv/log"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/kvrpcpb"
 	"github.com/stretchr/testify/assert"
 )
@@ -81,6 +82,7 @@ func TestRawGetNotFound1(t *testing.T) {
 		Cf:  cf,
 	}
 	resp, err := server.RawGet(nil, req)
+	log.Infof("resp:%+v", resp)
 	assert.Nil(t, err)
 	assert.True(t, resp.NotFound)
 }

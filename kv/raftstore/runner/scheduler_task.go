@@ -107,7 +107,6 @@ func (r *SchedulerTaskHandler) onHeartbeat(t *SchedulerRegionHeartbeatTask) {
 	if t.ApproximateSize != nil {
 		size = int64(*t.ApproximateSize)
 	}
-
 	req := &schedulerpb.RegionHeartbeatRequest{
 		Region:          t.Region,
 		Leader:          t.Peer,

@@ -73,6 +73,7 @@ func (r *snapRunner) sendSnap(addr string, msg *raft_serverpb.RaftMessage) error
 	if err != nil {
 		return err
 	}
+	defer snap.Close()
 	if !snap.Exists() {
 		return errors.Errorf("missing snap file: %v", snap.Path())
 	}

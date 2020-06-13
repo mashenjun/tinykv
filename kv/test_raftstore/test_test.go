@@ -12,12 +12,13 @@ import (
 	"time"
 
 	"github.com/Connor1996/badger"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/pingcap-incubator/tinykv/kv/config"
 	"github.com/pingcap-incubator/tinykv/kv/raftstore/meta"
 	"github.com/pingcap-incubator/tinykv/kv/util/engine_util"
 	"github.com/pingcap-incubator/tinykv/log"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/raft_cmdpb"
-	"github.com/stretchr/testify/assert"
 )
 
 // a client runs the function f and then signals it is done
@@ -155,6 +156,22 @@ func confchanger(t *testing.T, cluster *Cluster, ch chan bool, done *int32) {
 // - If confchangee is set, the cluster will schedule random conf change concurrently.
 // - If split is set, split region when size exceed 1024 bytes.
 func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash bool, partitions bool, maxraftlog int, confchange bool, split bool) {
+	// cnt, err := util.CountOpenFiles()
+	// if err != nil {
+	// 	log.Errorf("CountOpenFiles err: %+v", err)
+	// } else {
+	// 	log.Infof("cnt:%+v", cnt)
+	// }
+	// defer func() {
+	// 	time.Sleep(3*time.Second)
+	// 	cnt, err := util.CountOpenFiles()
+	// 	if err != nil {
+	// 		log.Errorf("CountOpenFiles err: %+v", err)
+	// 	} else {
+	// 		log.Infof("cnt:%+v", cnt)
+	// 	}
+	// }()
+
 	title := "Test: "
 	if unreliable {
 		// the network drops RPC requests and replies.
@@ -184,8 +201,10 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 		cfg.RaftLogGcCountLimit = uint64(maxraftlog)
 	}
 	if split {
-		cfg.RegionMaxSize = 300
-		cfg.RegionSplitSize = 200
+		// cfg.RegionMaxSize = 300
+		// cfg.RegionSplitSize = 200
+		cfg.RegionMaxSize = 60 * uint64(nclients)
+		cfg.RegionSplitSize = 40 * uint64(nclients)
 	}
 	cluster := NewTestCluster(nservers, cfg)
 	cluster.Start()
@@ -206,7 +225,6 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 		clnts[i] = make(chan int, 1)
 	}
 	for i := 0; i < 3; i++ {
-		// log.Printf("Iteration %v\n", i)
 		atomic.StoreInt32(&done_clients, 0)
 		atomic.StoreInt32(&done_partitioner, 0)
 		go SpawnClientsAndWait(t, ch_clients, nclients, func(cli int, t *testing.T) {
@@ -230,6 +248,7 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 					values := cluster.Scan([]byte(start), []byte(end))
 					v := string(bytes.Join(values, []byte("")))
 					if v != last {
+						log.Errorf("Test:%+v", title)
 						log.Fatalf("get wrong value, client %v\nwant:%v\ngot: %v\n", cli, last, v)
 					}
 				}
@@ -264,17 +283,16 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 
 		// log.Printf("wait for clients\n")
 		<-ch_clients
-
 		if crash {
-			log.Warnf("shutdown servers\n")
+			log.Warn("shutdown servers")
 			for i := 1; i <= nservers; i++ {
 				cluster.StopServer(uint64(i))
 			}
 			// Wait for a while for servers to shutdown, since
 			// shutdown isn't a real crash and isn't instantaneous
 			time.Sleep(electionTimeout)
-			log.Warnf("restart servers\n")
 			// crash and re-start all
+			log.Warn("restart servers")
 			for i := 1; i <= nservers; i++ {
 				cluster.StartServer(uint64(i))
 			}
@@ -292,7 +310,6 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 			values := cluster.Scan([]byte(start), []byte(end))
 			v := string(bytes.Join(values, []byte("")))
 			checkClntAppends(t, cli, v, j)
-
 			for k := 0; k < j; k++ {
 				key := strconv.Itoa(cli) + " " + fmt.Sprintf("%08d", k)
 				cluster.MustDelete([]byte(key))
@@ -321,7 +338,7 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 					truncatedIdx := state.TruncatedState.Index
 					appliedIdx := state.AppliedIndex
 					if appliedIdx-truncatedIdx > 2*uint64(maxraftlog) {
-						t.Fatalf("logs were not trimmed (%v - %v > 2*%v)", appliedIdx, truncatedIdx, maxraftlog)
+						t.Fatalf("logs for region:%+v were not trimmed (%v - %v > 2*%v)", region.GetId(),appliedIdx, truncatedIdx, maxraftlog)
 					}
 				}
 
@@ -538,7 +555,6 @@ func TestTransferLeader3B(t *testing.T) {
 	cluster := NewTestCluster(5, cfg)
 	cluster.Start()
 	defer cluster.Shutdown()
-
 	regionID := cluster.GetRegion([]byte("")).GetId()
 	cluster.MustTransferLeader(regionID, NewPeer(1, 1))
 	cluster.MustTransferLeader(regionID, NewPeer(2, 2))
@@ -653,7 +669,7 @@ func TestOneSplit3B(t *testing.T) {
 	region := cluster.GetRegion([]byte("k1"))
 	region1 := cluster.GetRegion([]byte("k2"))
 	assert.Equal(t, region.GetId(), region1.GetId())
-
+	log.Warnf("region:%+v, region1:%+v", region, region1)
 	cluster.AddFilter(
 		&PartitionFilter{
 			s1: []uint64{1, 2, 3, 4},
@@ -667,19 +683,26 @@ func TestOneSplit3B(t *testing.T) {
 	}
 
 	time.Sleep(200 * time.Millisecond)
+	log.Warn("ClearFilters")
 	cluster.ClearFilters()
 
 	left := cluster.GetRegion([]byte("k1"))
 	right := cluster.GetRegion([]byte("k2"))
 
-	assert.NotEqual(t, left.GetId(), right.GetId())
+	if ok := assert.NotEqual(t, left.GetId(), right.GetId()); !ok {
+		log.Fatalf("left:%+v right:%+v", left, right)
+	}
 	assert.True(t, bytes.Equal(region.GetStartKey(), left.GetStartKey()))
 	assert.True(t, bytes.Equal(left.GetEndKey(), right.GetStartKey()))
 	assert.True(t, bytes.Equal(right.GetEndKey(), region.GetEndKey()))
 
+	log.Warnf("left:%+v", left)
+
 	req := NewRequest(left.GetId(), left.GetRegionEpoch(), []*raft_cmdpb.Request{NewGetCfCmd(engine_util.CfDefault, []byte("k2"))})
 	resp, _ := cluster.CallCommandOnLeader(&req, time.Second)
-	assert.NotNil(t, resp.GetHeader().GetError())
+	if ok := assert.NotNil(t, resp.GetHeader().GetError()); !ok {
+		log.Fatalf("resp:%+v", resp)
+	}
 	assert.NotNil(t, resp.GetHeader().GetError().GetKeyNotInRegion())
 
 	MustGetEqual(cluster.engines[5], []byte("k100"), []byte("v100"))

@@ -1,12 +1,12 @@
 package runner
 
 import (
-	"encoding/hex"
 	"fmt"
 	"time"
 
 	"github.com/Connor1996/badger"
 	"github.com/juju/errors"
+
 	"github.com/pingcap-incubator/tinykv/kv/raftstore/meta"
 	"github.com/pingcap-incubator/tinykv/kv/raftstore/snap"
 	"github.com/pingcap-incubator/tinykv/kv/raftstore/util"
@@ -96,6 +96,7 @@ func (snapCtx *snapContext) applySnap(regionId uint64, startKey, endKey []byte, 
 	snapCtx.cleanUpRange(regionId, startKey, endKey)
 
 	snapKey := snap.SnapKey{RegionID: regionId, Index: snapMeta.Index, Term: snapMeta.Term}
+	log.Infof("snapKey:%+v", snapKey)
 	snapCtx.mgr.Register(snapKey, snap.SnapEntryApplying)
 	defer snapCtx.mgr.Deregister(snapKey, snap.SnapEntryApplying)
 
@@ -103,7 +104,7 @@ func (snapCtx *snapContext) applySnap(regionId uint64, startKey, endKey []byte, 
 	if err != nil {
 		return errors.New(fmt.Sprintf("missing snapshot file %s", err))
 	}
-
+	defer snapshot.Close()
 	t := time.Now()
 	applyOptions := snap.NewApplyOptions(snapCtx.engines.Kv, &metapb.Region{
 		Id:       regionId,
@@ -132,10 +133,10 @@ func (snapCtx *snapContext) handleApply(regionId uint64, notifier chan<- bool, s
 func (snapCtx *snapContext) cleanUpRange(regionId uint64, startKey, endKey []byte) {
 	if err := engine_util.DeleteRange(snapCtx.engines.Kv, startKey, endKey); err != nil {
 		log.Fatalf("failed to delete data in range, [regionId: %d, startKey: %s, endKey: %s, err: %v]", regionId,
-			hex.EncodeToString(startKey), hex.EncodeToString(endKey), err)
+			string(startKey), string(endKey), err)
 	} else {
 		log.Infof("succeed in deleting data in range. [regionId: %d, startKey: %s, endKey: %s]", regionId,
-			hex.EncodeToString(startKey), hex.EncodeToString(endKey))
+			string(startKey), string(endKey))
 	}
 }
 
@@ -162,7 +163,7 @@ func getAppliedIdxTermForSnapshot(raft *badger.DB, kv *badger.Txn, regionId uint
 }
 
 func doSnapshot(engines *engine_util.Engines, mgr *snap.SnapManager, regionId uint64) (*eraftpb.Snapshot, error) {
-	log.Debugf("begin to generate a snapshot. [regionId: %d]", regionId)
+	log.Debugf("begin to generate a snapshot from %v. [regionId: %d]", engines.RaftPath, regionId)
 
 	txn := engines.Kv.NewTransaction(false)
 
@@ -197,11 +198,13 @@ func doSnapshot(engines *engine_util.Engines, mgr *snap.SnapManager, regionId ui
 	if err != nil {
 		return nil, err
 	}
+	defer s.Close()
 	// Set snapshot data
 	snapshotData := &rspb.RaftSnapshotData{Region: region}
 	snapshotStatics := snap.SnapStatistics{}
 	err = s.Build(txn, region, snapshotData, &snapshotStatics, mgr)
 	if err != nil {
+		log.Infof("[regionId: %d]Build err:%+v", regionId, err)
 		return nil, err
 	}
 	snapshot.Data, err = snapshotData.Marshal()

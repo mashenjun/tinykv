@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/pingcap-incubator/tinykv/kv/raftstore/message"
+	"github.com/pingcap-incubator/tinykv/log"
 )
 
 // raftWorker is responsible for run raft commands and apply raft logs.
@@ -37,6 +38,7 @@ func (rw *raftWorker) run(closeCh <-chan struct{}, wg *sync.WaitGroup) {
 		msgs = msgs[:0]
 		select {
 		case <-closeCh:
+			log.Warnf("raftWorker close with len(msg):%+v", len(rw.closeCh))
 			return
 		case msg := <-rw.raftCh:
 			msgs = append(msgs, msg)

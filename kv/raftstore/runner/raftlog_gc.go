@@ -84,7 +84,7 @@ func (r *raftLogGCTaskHandler) Handle(t worker.Task) {
 	if err != nil {
 		log.Errorf("failed to gc. [regionId: %d, collected: %d, err: %v]", logGcTask.RegionID, collected, err)
 	} else {
-		log.Debugf("collected log entries. [regionId: %d, entryCount: %d]", logGcTask.RegionID, collected)
+		log.Debugf("collected log entries. [regionId: %d, start: %d, end: %d, entryCount: %d]", logGcTask.RegionID, logGcTask.StartIdx, logGcTask.EndIdx, collected)
 	}
 	r.reportCollected(collected)
 }

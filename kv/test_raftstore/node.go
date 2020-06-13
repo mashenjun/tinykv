@@ -19,6 +19,9 @@ import (
 	"github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/raft_cmdpb"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/raft_serverpb"
+
+	rspb "github.com/pingcap-incubator/tinykv/proto/pkg/raft_serverpb"
+
 )
 
 type MockTransport struct {
@@ -42,6 +45,7 @@ func (t *MockTransport) AddStore(storeID uint64, raftRouter message.RaftRouter, 
 
 	t.routers[storeID] = raftRouter
 	t.snapMgrs[storeID] = snapMgr
+	log.Infof("AddStore storeID:%+v, spMgrs.base:%+v", storeID, snapMgr.Base())
 }
 
 func (t *MockTransport) RemoveStore(storeID uint64) {
@@ -81,32 +85,42 @@ func (t *MockTransport) Send(msg *raft_serverpb.RaftMessage) error {
 
 	isSnapshot := msg.GetMessage().GetMsgType() == eraftpb.MessageType_MsgSnapshot
 	if isSnapshot {
+		snapshotData := new(rspb.RaftSnapshotData)
+		err := snapshotData.Unmarshal(msg.GetMessage().GetSnapshot().GetData())
+		if err == nil {
+			log.Infof("snapshot.meta %+v", snapshotData.GetMeta().GetCfFiles()[0])
+		}
 		snapshot := msg.Message.Snapshot
 		key, err := snap.SnapKeyFromSnap(snapshot)
 		if err != nil {
+			log.Errorf("SnapKeyFromSnap err:%+v", err)
 			return err
 		}
 
 		fromSnapMgr, found := t.snapMgrs[fromStore]
 		if !found {
+			log.Errorf("store %d is closed", toStore)
 			return errors.New(fmt.Sprintf("store %d is closed", fromStore))
 		}
 		fromSnapMgr.Register(key, snap.SnapEntrySending)
 		fromSnap, err := fromSnapMgr.GetSnapshotForSending(key)
 		if err != nil {
+			log.Errorf("GetSnapshotForSending err:%+v", err)
 			return err
 		}
-
+		defer fromSnap.Close()
 		toSnapMgr, found := t.snapMgrs[toStore]
 		if !found {
+			log.Errorf("store %d is closed", toStore)
 			return errors.New(fmt.Sprintf("store %d is closed", toStore))
 		}
 		toSnapMgr.Register(key, snap.SnapEntryReceiving)
 		toSnap, err := toSnapMgr.GetSnapshotForReceiving(key, snapshot.GetData())
 		if err != nil {
+			log.Errorf("GetSnapshotForReceiving err:%+v", err)
 			return err
 		}
-
+		defer toSnap.Close()
 		io.Copy(toSnap, fromSnap)
 		toSnap.Save()
 
@@ -210,9 +224,13 @@ func (c *NodeSimulator) CallCommandOnStore(storeID uint64, request *raft_cmdpb.R
 	cb := message.NewCallback()
 	err := router.SendRaftCommand(request, cb)
 	if err != nil {
+		// log.Warnf("SendRaftCommand request:%+v err:%+v", request, err)
 		return nil, nil
 	}
 
 	resp := cb.WaitRespWithTimeout(timeout)
+	// if resp == nil {
+	// 	log.Warnf("CallCommandOnStore to S%+v: nil resp because of timeout", storeID)
+	// }
 	return resp, cb.Txn
 }

@@ -75,7 +75,12 @@ type RawNode struct {
 // NewRawNode returns a new RawNode given configuration and a list of raft peers.
 func NewRawNode(config *Config) (*RawNode, error) {
 	// Your Code Here (2A).
-	return nil, nil
+
+	r := newRaft(config)
+	rn := RawNode{
+		Raft: r,
+	}
+	return &rn, nil
 }
 
 // Tick advances the internal logical clock by a single tick.
@@ -143,12 +148,55 @@ func (rn *RawNode) Step(m pb.Message) error {
 // Ready returns the current point-in-time state of this RawNode.
 func (rn *RawNode) Ready() Ready {
 	// Your Code Here (2A).
-	return Ready{}
+	ready := Ready{}
+	if rn.Raft.IsSoftStateUpdate() {
+		ready.SoftState = &SoftState{
+			Lead:      rn.Raft.Lead,
+			RaftState: rn.Raft.State,
+		}
+	}
+	if rn.Raft.IsHardStateUpdate() {
+		ready.HardState = rn.Raft.GetHardState()
+	}
+
+	ready.Entries = rn.Raft.RaftLog.unstableEntries()
+	ready.CommittedEntries = rn.Raft.RaftLog.nextEnts()
+
+	if len(rn.Raft.msgs) > 0 {
+		ready.Messages = rn.Raft.msgs
+	}
+	if rn.Raft.RaftLog.pendingSnapshot != nil {
+		ready.Snapshot = *rn.Raft.RaftLog.pendingSnapshot
+	}
+	return ready
 }
 
 // HasReady called when RawNode user need to check if any Ready pending.
 func (rn *RawNode) HasReady() bool {
 	// Your Code Here (2A).
+	// todo consider the offset if the first index is not 0
+	if rn.Raft.IsSoftStateUpdate() {
+		return true
+	}
+
+	if rn.Raft.IsHardStateUpdate() {
+		return true
+	}
+
+	if rn.Raft.RaftLog.applied == 0 {
+		sFirstIdx, _ := rn.Raft.RaftLog.storage.FirstIndex()
+		if rn.Raft.RaftLog.applied+sFirstIdx < rn.Raft.RaftLog.committed {
+			return true
+		}
+	} else if rn.Raft.RaftLog.applied < rn.Raft.RaftLog.committed {
+		return true
+	}
+	if len(rn.Raft.msgs) > 0 {
+		return true
+	}
+	if !IsEmptySnap(rn.Raft.RaftLog.pendingSnapshot) {
+		return true
+	}
 	return false
 }
 
@@ -156,6 +204,37 @@ func (rn *RawNode) HasReady() bool {
 // last Ready results.
 func (rn *RawNode) Advance(rd Ready) {
 	// Your Code Here (2A).
+
+	// clear processed message
+	if len(rd.Messages) > 0 {
+		rn.Raft.msgs = rn.Raft.msgs[len(rd.Messages):]
+	}
+	if len(rd.Entries) > 0 {
+		// update raftLog stable index
+		// and clear unstable log entries
+		rn.Raft.RaftLog.stabled = rd.Entries[len(rd.Entries)-1].GetIndex()
+	}
+	// first, _ := rn.Raft.RaftLog.storage.FirstIndex()
+	// if len(rn.Raft.RaftLog.entries) > 0 && rn.Raft.RaftLog.entries[0].GetIndex() < first {
+	// 	if rn.Raft.State == StateLeader {
+	// 		log.Warnf("%+v len(ents):%+v, pos:%+v", rn.Raft.id, len(rn.Raft.RaftLog.entries), first-rn.Raft.RaftLog.entries[0].GetIndex())
+	// 	}
+	// 	rn.Raft.RaftLog.entries = rn.Raft.RaftLog.entries[:first-rn.Raft.RaftLog.entries[0].GetIndex()]
+	// }
+	if len(rd.CommittedEntries) > 0 {
+		// update raftLog applied index
+		rn.Raft.RaftLog.applied = rd.CommittedEntries[len(rd.CommittedEntries)-1].GetIndex()
+
+	}
+	if !IsEmptySnap(&rd.Snapshot) {
+		rn.Raft.RaftLog.pendingSnapshot = nil
+	}
+	if rd.SoftState != nil {
+		rn.Raft.SyncSoftState(*rd.SoftState)
+	}
+	if rd.HardState.Term != 0 {
+		rn.Raft.SyncHardState(rd.HardState)
+	}
 }
 
 // GetProgress return the the Progress of this node and its peers, if this

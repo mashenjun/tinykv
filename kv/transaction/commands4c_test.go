@@ -4,9 +4,10 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/pingcap-incubator/tinykv/kv/util/engine_util"
 	"github.com/pingcap-incubator/tinykv/proto/pkg/kvrpcpb"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestEmptyRollback4C tests a rollback with no keys.
